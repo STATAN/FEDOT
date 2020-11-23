@@ -4,6 +4,7 @@ from datetime import timedelta
 import numpy as np
 from sklearn.metrics import mean_squared_error
 
+from examples.clustering import run_clustering_example
 from examples.forecasting_model_composing import run_metocean_forecasting_problem
 from examples.multiclass_prediction import get_model
 from examples.time_series_forecasting import (run_multistep_composite_example, run_multistep_linear_example,
@@ -56,3 +57,8 @@ def test_gapfilling_example():
 
         model_rmse = mean_squared_error(true_values, predicted_values, squared=False)
         assert model_rmse < 0.5
+
+
+def test_clustering_example():
+    metrics = run_clustering_example(is_fast=True)
+    assert all([_ >= 0 for _ in metrics])
