@@ -1,27 +1,20 @@
 import datetime
-from abc import abstractmethod, ABC
+from abc import ABC
+from fedot.core.log import default_log, Log
 
 
 class Timer(ABC):
-    def __init__(self, verbose=True):
+    def __init__(self, log: Log = None, verbose=True):
         self.verbose = verbose
         self.process_terminated = False
+        if not log:
+            self.log = default_log(__name__)
+        else:
+            self.log = log
 
     def __enter__(self):
         self.start = datetime.datetime.now()
         return self
-
-    @abstractmethod
-    def is_time_limit_reached(self, *args):
-        raise NotImplementedError()
-
-    def __exit__(self, *args):
-        raise NotImplementedError()
-
-
-class CompositionTimer(Timer):
-    def __init__(self, verbose=True):
-        super().__init__(verbose=verbose)
 
     @property
     def start_time(self):
@@ -33,7 +26,26 @@ class CompositionTimer(Timer):
 
     @property
     def minutes_from_start(self) -> float:
-        return self.spent_time.seconds / 60.
+        return self.spent_time.total_seconds() / 60.
+
+    @property
+    def seconds_from_start(self) -> float:
+        return self.spent_time.total_seconds()
+
+    def is_time_limit_reached(self, max_lead_time: datetime.timedelta) -> bool:
+        if datetime.datetime.now() - self.start >= max_lead_time:
+            self.process_terminated = True
+        else:
+            self.process_terminated = False
+        return self.process_terminated
+
+    def __exit__(self, *args):
+        return self.process_terminated
+
+
+class CompositionTimer(Timer):
+    def __init__(self, log: Log = None, verbose=True):
+        super().__init__(log=log, verbose=verbose)
 
     def _is_next_iteration_possible(self, time_constraint: float, generation_num: int = None) -> bool:
         minutes = self.minutes_from_start
@@ -46,7 +58,7 @@ class CompositionTimer(Timer):
         return possible
 
     def is_time_limit_reached(self, max_lead_time: datetime.timedelta, generation_num: int = None) -> bool:
-        max_lead_time = 0 if max_lead_time.seconds < 0 else max_lead_time.seconds / 60.
+        max_lead_time = 0 if max_lead_time.total_seconds() < 0 else max_lead_time.total_seconds() / 60.
         if max_lead_time:
             reached = not self._is_next_iteration_possible(generation_num=generation_num, time_constraint=max_lead_time)
         else:
@@ -56,20 +68,20 @@ class CompositionTimer(Timer):
 
     def __exit__(self, *args):
         if self.verbose:
-            print(f'Composition time: {round(self.minutes_from_start, 3)} min')
+            self.log.info(f'Composition time: {round(self.minutes_from_start, 3)} min')
             if self.process_terminated:
-                print('Algorithm was terminated due to processing time limit')
+                self.log.info('Algorithm was terminated due to processing time limit')
 
 
 class TunerTimer(Timer):
-    def __init__(self, verbose=False):
-        super().__init__(verbose=verbose)
+    def __init__(self, log: Log = None, verbose=False):
+        super().__init__(log=log, verbose=verbose)
 
-    def is_time_limit_reached(self, limit) -> bool:
-        if datetime.datetime.now() - self.start >= limit:
-            self.process_terminated = True
-            if self.verbose:
-                print('Tuning completed because of the time limit reached')
+    def is_time_limit_reached(self, max_lead_time: datetime.timedelta) -> bool:
+        super().is_time_limit_reached(max_lead_time)
+        if self.verbose:
+            if self.process_terminated:
+                self.log.info('Tuning completed because of the time limit reached')
         return self.process_terminated
 
     def __exit__(self, *args):

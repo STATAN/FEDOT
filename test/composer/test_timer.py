@@ -27,7 +27,7 @@ def test_tuner_timer():
     with TunerTimer(verbose=True) as timer:
         for iteration in range(iter_number):
             time.sleep(1)
-            if timer.is_time_limit_reached(limit=time_limit):
+            if timer.is_time_limit_reached(max_lead_time=time_limit):
                 reached = True
                 break
 

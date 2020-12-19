@@ -5,11 +5,12 @@ from uuid import uuid4
 
 import networkx as nx
 
+from fedot.core.chains.chain_template import ChainTemplate
 from fedot.core.chains.node import (FittedModelCache, Node, PrimaryNode, SecondaryNode, SharedCache)
+from fedot.core.composer.timer import Timer
 from fedot.core.data.data import InputData
 from fedot.core.log import Log, default_log
 from fedot.core.repository.tasks import TaskTypesEnum
-from fedot.core.chains.chain_template import ChainTemplate
 
 ERROR_PREFIX = 'Invalid chain configuration:'
 
@@ -31,7 +32,7 @@ class Chain:
         self.nodes = []
         self.log = log
         self.template = None
-
+        self.computation_time = None
         if not log:
             self.log = default_log(__name__)
         else:
@@ -64,13 +65,15 @@ class Chain:
                 cache_status = False
         return cache_status
 
-    def fit(self, input_data: InputData, use_cache=True, verbose=False):
+    def fit(self, input_data: InputData, use_cache=True, verbose=False,
+            model_fit_time_constraint: Optional[int] = None):
         """
         Run training process in all nodes in chain starting with root.
 
         :param input_data: data used for model training
         :param use_cache: flag defining whether use cache information about previous executions or not, default True
         :param verbose: flag used for status printing to console, default False
+        :param model_fit_time_constraint: time constraint for model fitting (seconds)
         """
         use_cache = self.cache_status_if_new_data(new_input_data=input_data, cache_status=use_cache)
 
@@ -85,7 +88,12 @@ class Chain:
 
         if not use_cache or self.fitted_on_data is None:
             self.fitted_on_data = input_data
-        train_predicted = self.root_node.fit(input_data=input_data, verbose=verbose)
+
+        with Timer(log=self.log) as t:
+            train_predicted = self.root_node.fit(input_data=input_data, verbose=verbose,
+                                                 time_constraint=model_fit_time_constraint)
+            self.computation_time = round(t.minutes_from_start, 3)
+
         return train_predicted
 
     def predict(self, input_data: InputData, output_mode: str = 'default'):

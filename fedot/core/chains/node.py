@@ -2,6 +2,7 @@ from abc import ABC
 from collections import namedtuple
 from copy import copy
 from datetime import timedelta
+from multiprocessing import Manager, Process
 from typing import Callable, List, Optional
 
 from fedot.core.data.data import InputData, OutputData
@@ -93,12 +94,24 @@ class Node(ABC):
 
         return data, preprocessing_strategy
 
-    def fit(self, input_data: InputData, verbose=False) -> OutputData:
+    def _fit_with_time_limit(self, data: InputData, time: int = 900) -> Manager:
+        manager = Manager()
+        return_dict = manager.dict()
+        p = Process(target=self.model.fit, args=(data, return_dict), kwargs={})
+        p.start()
+        p.join(time)
+        if p.is_alive():
+            p.terminate()
+            raise TimeoutError(f'Chain fitness evaluation time limit is expired')
+        return return_dict['fitted_model'], return_dict['predict_train']
+
+    def fit(self, input_data: InputData, verbose=False, time_constraint: Optional[int] = None) -> OutputData:
         """
         Run training process in the node
 
         :param input_data: data used for model training
         :param verbose: flag used for status printing to console, default False
+        :param time_constraint: time constraint for model fitting (seconds)
         """
         transformed = self._transform(input_data)
         preprocessed_data, preproc_strategy = self._preprocess(transformed)
@@ -107,7 +120,11 @@ class Node(ABC):
             if verbose:
                 print('Cache is not actual')
 
-            cached_model, model_predict = self.model.fit(data=preprocessed_data)
+            if time_constraint is None:
+                cached_model, model_predict = self.model.fit(data=preprocessed_data)
+            else:
+                cached_model, model_predict = self._fit_with_time_limit(data=preprocessed_data, time=time_constraint)
+
             self.cache.append(CachedState(preprocessor=copy(preproc_strategy),
                                           model=cached_model))
         else:
@@ -235,17 +252,18 @@ class PrimaryNode(Node):
                          manual_preprocessing_func=manual_preprocessing_func,
                          **kwargs)
 
-    def fit(self, input_data: InputData, verbose=False) -> OutputData:
+    def fit(self, input_data: InputData, verbose=False, time_constraint: Optional[int] = None) -> OutputData:
         """
         Fit the model located in the primary node
 
         :param input_data: data used for model training
         :param verbose: flag used for status printing to console, default False
+        :param time_constraint: time constraint for model fitting (seconds)
         """
         if verbose:
             self.log.info(f'Trying to fit primary node with model: {self.model}')
 
-        return super().fit(input_data, verbose)
+        return super().fit(input_data, verbose, time_constraint=time_constraint)
 
     def predict(self, input_data: InputData,
                 output_mode: str = 'default', verbose=False) -> OutputData:
@@ -280,12 +298,13 @@ class SecondaryNode(Node):
                          manual_preprocessing_func=manual_preprocessing_func,
                          **kwargs)
 
-    def fit(self, input_data: InputData, verbose=False) -> OutputData:
+    def fit(self, input_data: InputData, verbose=False, time_constraint: Optional[int] = None) -> OutputData:
         """
         Fit the model located in the secondary node
 
         :param input_data: data used for model training
         :param verbose: flag used for status printing to console, default False
+        :param time_constraint: time constraint for model fitting (seconds)
         """
         if verbose:
             self.log.info(f'Trying to fit secondary node with model: {self.model}')
@@ -293,7 +312,7 @@ class SecondaryNode(Node):
         secondary_input = self._input_from_parents(input_data=input_data,
                                                    parent_operation='fit',
                                                    verbose=verbose)
-        return super().fit(input_data=secondary_input)
+        return super().fit(input_data=secondary_input, time_constraint=time_constraint)
 
     def predict(self, input_data: InputData, output_mode: str = 'default', verbose=False) -> OutputData:
         """

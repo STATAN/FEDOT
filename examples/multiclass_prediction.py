@@ -30,8 +30,7 @@ def get_model(train_file_path: str, cur_lead_time: datetime.timedelta = timedelt
     models_repo = ModelTypesRepository()
     available_model_types, _ = models_repo.suitable_model(task_type=task.task_type, tags=['simple'])
 
-    metric_function = MetricsRepository(). \
-        metric_by_id(ClassificationMetricsEnum.ROCAUC_penalty)
+    metric_function = ClassificationMetricsEnum.ROCAUC_penalty
 
     composer_requirements = GPComposerRequirements(
         primary=available_model_types, secondary=available_model_types,

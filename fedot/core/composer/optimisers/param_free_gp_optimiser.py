@@ -7,7 +7,7 @@ from fedot.core.composer.optimisers.selection import selection
 from fedot.core.composer.optimisers.gp_optimiser import GPChainOptimiserParameters, GPChainOptimiser
 from fedot.core.composer.timer import CompositionTimer
 from fedot.core.composer.iterator import fibonacci_sequence, SequenceIterator
-from fedot.core.composer.optimisers.gp_operators import num_of_parents_in_crossover
+from fedot.core.composer.optimisers.gp_operators import num_of_parents_in_crossover, evaluate_individuals
 from fedot.core.log import Log
 
 
@@ -22,13 +22,14 @@ class GPChainParameterFreeOptimiser(GPChainOptimiser):
     :param parameters: parameters of chain optimiser
     :param max_population_size: maximum population size
     :param log: optional parameter for log object
+    :param archive_type: type of archive with best individuals
     """
 
     def __init__(self, initial_chain, requirements, chain_generation_params,
                  parameters: Optional[GPChainOptimiserParameters] = None,
                  max_population_size: int = 55,
-                 sequence_function=fibonacci_sequence, log: Log = None):
-        super().__init__(initial_chain, requirements, chain_generation_params, parameters, log)
+                 sequence_function=fibonacci_sequence, log: Log = None, archive_type=None):
+        super().__init__(initial_chain, requirements, chain_generation_params, parameters, log, archive_type)
 
         if self.parameters.genetic_scheme_type != GeneticSchemeTypesEnum.parameter_free:
             self.log.error(f'Invalid genetic scheme type was changed to parameter-free . Continue.')
@@ -48,16 +49,13 @@ class GPChainParameterFreeOptimiser(GPChainOptimiser):
 
         num_of_new_individuals = self.offspring_size(offspring_rate)
         self.log.info(f'pop size: {self.requirements.pop_size}, num of new inds: {num_of_new_individuals}')
-        with CompositionTimer() as t:
-
-            self.history = []
+        with CompositionTimer(log=self.log) as t:
 
             if self.requirements.add_single_model_chains:
                 best_single_model, self.requirements.primary = \
                     self._best_single_models(objective_function)
 
-            for ind in self.population:
-                ind.fitness = objective_function(ind)
+            evaluate_individuals(self.population, objective_function, self.parameters.multi_objective)
 
             self._add_to_history(self.population)
 
@@ -65,9 +63,11 @@ class GPChainParameterFreeOptimiser(GPChainOptimiser):
 
             while not t.is_time_limit_reached(self.requirements.max_lead_time) \
                     and self.generation_num != self.requirements.num_of_generations - 1:
+
                 self.log.info(f'Generation num: {self.generation_num}')
                 self.num_of_gens_without_improvements = self.update_stagnation_counter()
                 self.log.info(f'max_depth: {self.max_depth}, no improvements: {self.num_of_gens_without_improvements}')
+
                 if self.parameters.with_auto_depth_configuration and self.generation_num != 0:
                     self.max_depth_recount()
 
@@ -80,7 +80,7 @@ class GPChainParameterFreeOptimiser(GPChainOptimiser):
 
                 if num_of_new_individuals == 1 and len(self.population) == 1:
                     new_population = list(self.reproduce(self.population[0]))
-                    new_population[0].fitness = objective_function(new_population[0])
+                    evaluate_individuals(new_population, objective_function, self.parameters.multi_objective)
                 else:
                     num_of_parents = num_of_parents_in_crossover(num_of_new_individuals)
 
@@ -94,8 +94,7 @@ class GPChainParameterFreeOptimiser(GPChainOptimiser):
                         new_population += self.reproduce(selected_individuals[parent_num],
                                                          selected_individuals[parent_num + 1])
 
-                        new_population[parent_num].fitness = objective_function(new_population[parent_num])
-                        new_population[parent_num + 1].fitness = objective_function(new_population[parent_num + 1])
+                    evaluate_individuals(new_population, objective_function, self.parameters.multi_objective)
 
                 self.requirements.pop_size = self.next_population_size(new_population)
                 num_of_new_individuals = self.offspring_size(offspring_rate)

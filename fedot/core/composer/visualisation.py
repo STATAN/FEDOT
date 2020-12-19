@@ -1,10 +1,14 @@
+import itertools
+import numpy as np
+import seaborn as sns
 import os
 from copy import deepcopy
+from deap import tools
 from glob import glob, iglob
 from math import ceil, log2
 from os import remove
 from time import time
-from typing import Optional
+from typing import (Any, Optional, Tuple, List)
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -132,7 +136,8 @@ class ComposerVisualiser:
         try:
             ComposerVisualiser._clean(with_gif=True)
             ComposerVisualiser._visualise_chains(chains, fitnesses)
-            ComposerVisualiser._visualise_convergence(fitnesses)
+            if type(fitnesses[0]) is not list:
+                ComposerVisualiser._visualise_convergence(fitnesses)
             ComposerVisualiser._merge_images(len(chains))
             ComposerVisualiser._combine_gifs()
             ComposerVisualiser._clean()
@@ -160,6 +165,13 @@ class ComposerVisualiser:
             new_im.save(f'{ComposerVisualiser.temp_path}{ComposerVisualiser.gif_prefix}{img_idx}.png')
 
     @staticmethod
+    def create_gif_using_images(gif_path: str, files: List[str]):
+        with get_writer(gif_path, mode='I', duration=0.5) as writer:
+            for filename in files:
+                image = imread(filename)
+                writer.append_data(image)
+
+    @staticmethod
     def _combine_gifs():
         files = [file_name for file_name in
                  iglob(f'{ComposerVisualiser.temp_path}{ComposerVisualiser.gif_prefix}*.png')]
@@ -169,10 +181,8 @@ class ComposerVisualiser:
                      iglob(f'{ComposerVisualiser.temp_path}{ComposerVisualiser.gif_prefix}*.png')]
         files = [file for _, file in sorted(zip(files_idx, files))]
 
-        with get_writer(f'{ComposerVisualiser.temp_path}final_{str(time())}.gif', mode='I', duration=0.5) as writer:
-            for filename in files:
-                image = imread(filename)
-                writer.append_data(image)
+        ComposerVisualiser.create_gif_using_images(gif_path=f'{ComposerVisualiser.temp_path}final_{str(time())}.gif',
+                                                   files=files)
 
     @staticmethod
     def _clean(with_gif=False):
@@ -185,6 +195,143 @@ class ComposerVisualiser:
         except Exception as ex:
             print(ex)
 
+    @staticmethod
+    def objectives_lists(individuals: List[Any], objectives_numbers: Tuple[int] = None):
+        num_of_objectives = len(objectives_numbers) if objectives_numbers else len(individuals[0].fitness.values)
+        objectives_numbers = objectives_numbers if objectives_numbers else [i for i in range(num_of_objectives)]
+        objectives_values_set = [[] for _ in range(num_of_objectives)]
+        for obj_num in range(num_of_objectives):
+            for individual in individuals:
+                value = individual.fitness.values[objectives_numbers[obj_num]]
+                objectives_values_set[obj_num].append(value if value > 0 else -value)
+        return objectives_values_set
+
+    @staticmethod
+    def objectives_transform(individuals: List[List[Any]], objectives_numbers: Tuple[int] = None):
+        objectives_numbers = [i for i in range(
+            len(individuals[0][0].fitness.values))] if not objectives_numbers else objectives_numbers
+        all_inds = list(itertools.chain(*individuals))
+        all_objectives = [[ind.fitness.values[i] for ind in all_inds] for i in objectives_numbers]
+        all_objectives = list(
+            map(lambda obj_values: obj_values if obj_values[0] > 0 else list(np.array(obj_values) * (-1)),
+                all_objectives))
+        return all_objectives
+
+    @staticmethod
+    def create_boxplot(individuals: List[Any], generation_num: int = None,
+                       objectives_names: Tuple[str] = ('ROC-AUC', 'Complexity'), file_name: str = 'obj_boxplots.png',
+                       folder: str = f'../../tmp/boxplots', y_limits: Tuple[float] = None):
+
+        fig, ax = plt.subplots()
+        ax.set_title(f'Generation: {generation_num}', fontsize=15)
+        objectives = ComposerVisualiser.objectives_lists(individuals)
+        df_objectives = pd.DataFrame({objectives_names[i]: objectives[i] for i in range(len(objectives))})
+        sns.boxplot(data=df_objectives, palette="Blues")
+        if y_limits:
+            plt.ylim(y_limits[0], y_limits[1])
+        if not os.path.isdir('../../tmp'):
+            os.mkdir('../../tmp')
+        if not os.path.isdir(f'{folder}'):
+            os.mkdir(f'{folder}')
+        path = f'{folder}/{file_name}'
+        plt.savefig(path, bbox_inches='tight')
+
+    @staticmethod
+    def boxplots_gif_create(individuals: List[List[Any]], objectives_names: Tuple[str] = ('ROC-AUC', 'Complexity'),
+                            folder: str = None):
+        objectives = ComposerVisualiser.objectives_transform(individuals)
+        objectives = list(itertools.chain(*objectives))
+        min_y, max_y = min(objectives), max(objectives)
+        files = []
+        folder = f'{ComposerVisualiser.temp_path}' if folder is None else folder
+        for generation_num, individuals_in_genaration in enumerate(individuals):
+            file_name = f'{generation_num}.png'
+            ComposerVisualiser.create_boxplot(individuals_in_genaration, generation_num, objectives_names,
+                                              file_name=file_name, folder=folder, y_limits=(min_y, max_y))
+            files.append(f'{folder}/{file_name}')
+        ComposerVisualiser.create_gif_using_images(gif_path=f'{folder}/boxplots_history.gif', files=files)
+        for file in files:
+            remove(file)
+        plt.cla()
+        plt.clf()
+        plt.close('all')
+
+    @staticmethod
+    def visualise_pareto(archive: Any, objectives_numbers: Tuple[int] = (0, 1),
+                         objectives_names: Tuple[str] = ('ROC-AUC', 'Complexity'),
+                         file_name: str = 'result_pareto.png', show: bool = False, save: bool = True,
+                         folder: str = f'../../tmp/pareto',
+                         generation_num: int = None, individuals: List[Any] = None, minmax_x: List[float] = None,
+                         minmax_y: List[float] = None):
+
+        pareto_obj_first, pareto_obj_second = [], []
+        for i in range(len(archive.items)):
+            fit_first = archive.items[i].fitness.values[objectives_numbers[0]]
+            pareto_obj_first.append(fit_first if fit_first > 0 else -fit_first)
+            fit_second = archive.items[i].fitness.values[objectives_numbers[1]]
+            pareto_obj_second.append(fit_second if fit_second > 0 else -fit_second)
+
+        fig, ax = plt.subplots()
+
+        if individuals is not None:
+            obj_first, obj_second = [], []
+            for i in range(len(individuals)):
+                fit_first = individuals[i].fitness.values[objectives_numbers[0]]
+                obj_first.append(fit_first if fit_first > 0 else -fit_first)
+                fit_second = individuals[i].fitness.values[objectives_numbers[1]]
+                obj_second.append(fit_second if fit_second > 0 else -fit_second)
+            ax.scatter(obj_first, obj_second, c='green')
+
+        ax.scatter(pareto_obj_first, pareto_obj_second, c='red')
+
+        if generation_num is not None:
+            ax.set_title(f'Pareto front, Generation: {generation_num}', fontsize=15)
+        else:
+            ax.set_title('Pareto front', fontsize=15)
+        plt.xlabel(objectives_names[0], fontsize=15)
+        plt.ylabel(objectives_names[1], fontsize=15)
+        plt.xlim(minmax_x[0], minmax_x[1])
+        plt.ylim(minmax_y[0], minmax_y[1])
+
+        fig.set_figwidth(8)
+        fig.set_figheight(8)
+        if save:
+            if not os.path.isdir('../../tmp'):
+                os.mkdir('../../tmp')
+            if not os.path.isdir(f'{folder}'):
+                os.mkdir(f'{folder}')
+
+            path = f'{folder}/{file_name}'
+            plt.savefig(path, bbox_inches='tight')
+        if show:
+            plt.show()
+
+        plt.cla()
+        plt.clf()
+        plt.close('all')
+
+    @staticmethod
+    def pareto_gif_create(pareto_fronts: List[tools.ParetoFront], individuals: List[List[Any]] = None,
+                          objectives_numbers: Tuple[int] = (1, 0),
+                          objectives_names: Tuple[str] = ('Complexity', 'ROC-AUC')):
+        files = []
+        array_for_analysis = individuals if individuals else pareto_fronts
+        all_objectives = ComposerVisualiser.objectives_transform(array_for_analysis, objectives_numbers)
+        min_x, max_x = min(all_objectives[0]) - 0.1, max(all_objectives[0]) + 0.1
+        min_y, max_y = min(all_objectives[1]) - 0.1, max(all_objectives[1]) + 0.1
+        folder = f'{ComposerVisualiser.temp_path}'
+        for i, front in enumerate(pareto_fronts):
+            file_name = f'pareto{i}.png'
+            ComposerVisualiser.visualise_pareto(front, file_name=file_name, save=True, show=False,
+                                                folder=folder, generation_num=i, individuals=individuals[i],
+                                                minmax_x=[min_x, max_x], minmax_y=[min_y, max_y],
+                                                objectives_numbers=objectives_numbers,
+                                                objectives_names=objectives_names)
+            files.append(f'{folder}/{file_name}')
+
+        ComposerVisualiser.create_gif_using_images(gif_path=f'{folder}/pareto_history.gif', files=files)
+        for file in files:
+            remove(file)
 
 def colors_by_node_labels(node_labels: dict):
     colors = [color for color in range(len(node_labels.keys()))]

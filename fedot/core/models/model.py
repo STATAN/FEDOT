@@ -1,6 +1,7 @@
-from datetime import timedelta
-
 import numpy as np
+
+from datetime import timedelta
+from multiprocessing import Manager
 
 from fedot.core.algorithms.time_series.prediction import post_process_forecasted_ts
 from fedot.core.data.data import InputData
@@ -73,12 +74,13 @@ class Model:
         if 'output_mode' in kwargs:
             self._eval_strategy.output_mode = kwargs['output_mode']
 
-    def fit(self, data: InputData):
+    def fit(self, data: InputData, return_dict: Manager = None):
         """
         This method is used for defining and running of the evaluation strategy
         to train the model with the data provided
-
         :param data: data used for model training
+        :param return_dict: in a case of model fit time controll (process
+        created) this dictionary is used for return
         :return: tuple of trained model and prediction on train data
         """
         self._init(data.task)
@@ -89,7 +91,11 @@ class Model:
 
         predict_train = self.predict(fitted_model, data)
 
-        return fitted_model, predict_train
+        if return_dict is None:
+            return fitted_model, predict_train
+        else:
+            return_dict['fitted_model'] = fitted_model
+            return_dict['predict_train'] = predict_train
 
     def predict(self, fitted_model, data: InputData, output_mode: str = 'default'):
         """
@@ -114,7 +120,6 @@ class Model:
                   max_lead_time: timedelta = timedelta(minutes=5)):
         """
         This method is used for hyperparameter searching
-
         :param data: data used for hyperparameter searching
         :param iterations: max number of iterations evaluable for hyperparameter optimization
         :param max_lead_time: max time(seconds) for tuning evaluation

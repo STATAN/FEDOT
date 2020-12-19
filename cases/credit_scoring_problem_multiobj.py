@@ -1,22 +1,22 @@
 import datetime
-import os
 import random
 
 import numpy as np
 from sklearn.metrics import roc_auc_score as roc_auc
+from cases.credit_scoring_problem import get_scoring_data
 
 from fedot.core.chains.chain import Chain
-from fedot.core.composer.gp_composer.gp_composer import GPComposerBuilder, GPComposerRequirements
-from fedot.core.composer.optimisers.gp_optimiser import GPChainOptimiserParameters, GeneticSchemeTypesEnum
-from fedot.core.composer.visualisation import ComposerVisualiser
 from fedot.core.data.data import InputData
+from fedot.core.composer.gp_composer.gp_composer import GPComposerRequirements, GPComposerBuilder
+from fedot.core.composer.optimisers.gp_optimiser import GPChainOptimiserParameters, GeneticSchemeTypesEnum
+from fedot.core.composer.optimisers.selection import SelectionTypesEnum
+from fedot.core.composer.visualisation import ComposerVisualiser
 from fedot.core.repository.model_types_repository import ModelTypesRepository
-from fedot.core.repository.quality_metrics_repository import ClassificationMetricsEnum
+from fedot.core.repository.quality_metrics_repository import ClassificationMetricsEnum, ComplexityMetricsEnum
 from fedot.core.repository.tasks import Task, TaskTypesEnum
-from fedot.core.utils import project_root
 
-random.seed(1)
-np.random.seed(1)
+random.seed(12)
+np.random.seed(12)
 
 
 def calculate_validation_metric(chain: Chain, dataset_to_validate: InputData) -> float:
@@ -29,7 +29,7 @@ def calculate_validation_metric(chain: Chain, dataset_to_validate: InputData) ->
 
 
 def run_credit_scoring_problem(train_file_path, test_file_path,
-                               max_lead_time: datetime.timedelta = datetime.timedelta(minutes=5),
+                               max_lead_time: datetime.timedelta = datetime.timedelta(minutes=120),
                                is_visualise=False):
     task = Task(TaskTypesEnum.classification)
     dataset_to_compose = InputData.from_csv(train_file_path, task=task)
@@ -39,60 +39,52 @@ def run_credit_scoring_problem(train_file_path, test_file_path,
     available_model_types, _ = ModelTypesRepository().suitable_model(task_type=task.task_type)
 
     # the choice of the metric for the chain quality assessment during composition
-    metric_function = ClassificationMetricsEnum.ROCAUC_penalty
-
+    quality_metric = ClassificationMetricsEnum.ROCAUC
+    complexity_metric = ComplexityMetricsEnum.node_num
+    metrics = [quality_metric, complexity_metric]
     # the choice and initialisation of the GP search
     composer_requirements = GPComposerRequirements(
         primary=available_model_types,
         secondary=available_model_types, max_arity=3,
-        max_depth=3, pop_size=20, num_of_generations=20,
-        crossover_prob=0.8, mutation_prob=0.8, max_lead_time=max_lead_time, model_fit_time_constraint=900)
+        max_depth=3, pop_size=4, num_of_generations=4,
+        crossover_prob=0.8, mutation_prob=0.8, max_lead_time=max_lead_time, model_fit_time_constraint=900,
+        start_depth=2)
 
     # GP optimiser parameters choice
     scheme_type = GeneticSchemeTypesEnum.steady_state
-    optimiser_parameters = GPChainOptimiserParameters(genetic_scheme_type=scheme_type)
+    optimiser_parameters = GPChainOptimiserParameters(genetic_scheme_type=scheme_type,
+                                                      selection_types=[SelectionTypesEnum.nsga2])
 
     # Create builder for composer and set composer params
     builder = GPComposerBuilder(task=task).with_requirements(composer_requirements).with_metrics(
-        metric_function).with_optimiser_parameters(optimiser_parameters)
+        metrics).with_optimiser_parameters(optimiser_parameters)
 
     # Create GP-based composer
     composer = builder.build()
 
     # the optimal chain generation by composition - the most time-consuming task
-    chain_evo_composed = composer.compose_chain(data=dataset_to_compose,
-                                                is_visualise=True)
+    chains_evo_composed = composer.compose_chain(data=dataset_to_compose,
+                                                 is_visualise=True)
 
-    chain_evo_composed.fine_tune_primary_nodes(input_data=dataset_to_compose,
-                                               iterations=50)
+    chains_roc_auc = []
+    for chain_evo_composed in chains_evo_composed:
 
-    chain_evo_composed.fit(input_data=dataset_to_compose, verbose=True)
+        if is_visualise:
+            ComposerVisualiser.visualise(chain_evo_composed)
 
-    if is_visualise:
-        ComposerVisualiser.visualise(chain_evo_composed)
+        chain_evo_composed.fine_tune_primary_nodes(input_data=dataset_to_compose,
+                                                   iterations=50)
 
-    # the quality assessment for the obtained composite models
-    roc_on_valid_evo_composed = calculate_validation_metric(chain_evo_composed,
-                                                            dataset_to_validate)
+        chain_evo_composed.fit(input_data=dataset_to_compose, verbose=True)
 
-    print(f'Composed ROC AUC is {round(roc_on_valid_evo_composed, 3)}')
+        # the quality assessment for the obtained composite models
+        roc_on_valid_evo_composed = calculate_validation_metric(chain_evo_composed,
+                                                                dataset_to_validate)
 
-    return roc_on_valid_evo_composed
+        chains_roc_auc.append(roc_on_valid_evo_composed)
+        print(f'Composed ROC AUC is {round(roc_on_valid_evo_composed, 3)}')
 
-
-def get_scoring_data():
-    # the dataset was obtained from https://www.kaggle.com/c/GiveMeSomeCredit
-
-    # a dataset that will be used as a train and test set during composition
-
-    file_path_train = 'cases/data/scoring/scoring_train.csv'
-    full_path_train = os.path.join(str(project_root()), file_path_train)
-
-    # a dataset for a final validation of the composed model
-    file_path_test = 'cases/data/scoring/scoring_test.csv'
-    full_path_test = os.path.join(str(project_root()), file_path_test)
-
-    return full_path_train, full_path_test
+    return max(chains_roc_auc)
 
 
 if __name__ == '__main__':
