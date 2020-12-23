@@ -93,6 +93,8 @@ _preprocessing_for_input_data = {
 
 def preprocessing_func_for_data(data: 'InputData', node: 'Node'):
     preprocessing_func = EmptyStrategy
+
+    # It is used only for those nodes that need preprocessing
     if 'without_preprocessing' not in node.model.metadata.tags:
         if node.manual_preprocessing_func:
             preprocessing_func = node.manual_preprocessing_func
