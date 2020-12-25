@@ -18,14 +18,14 @@ np.random.seed(2020)
 single = True
 
 # Generate data and train test split
-time_series = generate_synthetic_data()
+time_series = generate_synthetic_data(1000)
 len_forecast = 150
 train_part = time_series[:-len_forecast]
 test_part = time_series[-len_forecast:]
 if __name__ == '__main__':
     # Regression chain with single model init
-    for preproc_func in [EmptyStrategy, Scaling, Normalization,
-                         ImputationStrategy, TsScalingStrategy]:
+    for preproc_func in [TsScalingStrategy, EmptyStrategy, Scaling, Normalization,
+                         ImputationStrategy]:
         print(str(preproc_func))
 
         if single == True:

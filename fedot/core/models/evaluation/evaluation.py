@@ -145,7 +145,9 @@ class SkLearnEvaluationStrategy(EvaluationStrategy):
         else:
             sklearn_model = self._sklearn_model_impl()
 
-        sklearn_model.fit(train_data.features, train_data.target)
+        ft = train_data.features
+        tg = train_data.target
+        sklearn_model.fit(ft, tg)
         return sklearn_model
 
     def predict(self, trained_model, predict_data: InputData) -> OutputData:

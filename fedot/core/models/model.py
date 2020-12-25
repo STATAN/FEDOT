@@ -5,7 +5,7 @@ import numpy as np
 from fedot.core.algorithms.time_series.prediction import post_process_forecasted_ts
 from fedot.core.data.data import InputData
 from fedot.core.log import Log, default_log
-from fedot.core.models.evaluation.evaluation import EvaluationStrategy
+
 from fedot.core.repository.dataset_types import DataTypesEnum
 from fedot.core.repository.model_types_repository import ModelMetaInfo, ModelTypesRepository
 from fedot.core.repository.tasks import Task, TaskTypesEnum, compatible_task_types
@@ -82,6 +82,7 @@ class Model:
         :param data: data used for model training
         :return: tuple of trained model and prediction on train data
         """
+        print('fit')
         self._init(data.task)
 
         prepared_data = data.prepare_for_modelling(is_for_fit=True)
