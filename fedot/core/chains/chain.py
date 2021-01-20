@@ -90,9 +90,13 @@ class Chain:
             self.fitted_on_data = input_data
 
         with Timer(log=self.log) as t:
+            computation_time_update = True if not use_cache or not self.root_node.cache.actual_cached_state or \
+                                              self.computation_time is None else False
+
             train_predicted = self.root_node.fit(input_data=input_data, verbose=verbose,
                                                  time_constraint=model_fit_time_constraint)
-            self.computation_time = round(t.minutes_from_start, 3)
+            if computation_time_update:
+                self.computation_time = round(t.minutes_from_start, 3)
 
         return train_predicted
 
@@ -275,6 +279,7 @@ class SharedChain(Chain):
         self.nodes = copy(base_chain.nodes)
         for node in self.nodes:
             node.cache = SharedCache(node, global_cached_models=shared_cache)
+        self.computation_time = base_chain.computation_time
 
     def unshare(self) -> Chain:
         chain = Chain()

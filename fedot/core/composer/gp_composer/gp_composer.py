@@ -74,7 +74,10 @@ class GPComposer(Composer):
     """
     Genetic programming based composer
     :param optimiser: optimiser generated in GPComposerBuilder
-    :param metrics: metrics used to define the quality of found solution
+    :param metrics: metrics used to define the quality of found solution.
+    Note: If you are using parameter-free optimiser for multi-objective problem solving, then main metric should be
+    given as first in metrics list (for example if you want to find the solution in classification problem with two
+    metrics: 1.quality and 2.chain complexity, then quality should be placed first)
     :param composer_requirements: requirements for composition process
     :param initial_chain: defines the initial state of the population. If None then initial population is random.
     """
@@ -125,7 +128,6 @@ class GPComposer(Composer):
 
     def composer_metric(self, metrics, train_data: InputData, test_data: InputData,
                         is_chain_shared: bool, chain: Chain) -> Optional[Tuple[Any]]:
-
         try:
             validate(chain)
             if type(metrics) is not list:
@@ -150,7 +152,6 @@ class GPComposer(Composer):
         except Exception as ex:
             self.log.info(f'Chain assessment warning: {ex}. Continue.')
             evaluated_metrics = None
-
         return evaluated_metrics
 
     @staticmethod
