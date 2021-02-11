@@ -65,7 +65,7 @@ class Chain:
                 cache_status = False
         return cache_status
 
-    def fit(self, input_data: InputData, use_cache=True, verbose=False,
+    def fit(self, input_data: InputData, use_cache=False, verbose=False,
             model_fit_time_constraint: Optional[int] = None):
         """
         Run training process in all nodes in chain starting with root.

@@ -1,10 +1,9 @@
 import math
+import numpy as np
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 from typing import (Any, Callable, List, Optional, Tuple)
-
-import numpy as np
 
 from fedot.core.composer.constraint import constraint_function
 from fedot.core.composer.optimisers.crossover import CrossoverTypesEnum, crossover
@@ -313,7 +312,7 @@ class GPChainOptimiser:
         if self.parameters.genetic_scheme_type == GeneticSchemeTypesEnum.steady_state:
             num_of_new_individuals = math.ceil(self.requirements.pop_size * default_offspring_rate)
         else:
-            num_of_new_individuals = self.requirements.pop_size - 1
+            num_of_new_individuals = self.requirements.pop_size - 1 #!
         return num_of_new_individuals
 
     def result_individual(self) -> Any:

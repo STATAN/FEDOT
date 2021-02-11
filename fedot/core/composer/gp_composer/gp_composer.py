@@ -101,7 +101,7 @@ class GPComposer(Composer):
                                                       sample_split_ration_for_tasks[data.task.task_type],
                                                       task=data.task)
         self.shared_cache.clear()
-        metric_function_for_nodes = partial(self.composer_metric, self.metrics, train_data, test_data, True)
+        metric_function_for_nodes = partial(self.composer_metric, self.metrics, train_data, test_data, False)
 
         best_chain, self.history = self.optimiser.optimise(metric_function_for_nodes)
 
